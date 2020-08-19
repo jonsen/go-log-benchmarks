@@ -1,6 +1,7 @@
 package ltsvlog_test
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/hnakamur/ltsvlog"
 	ltsv "github.com/hnakamur/zap-ltsv"
+	"github.com/kataras/golog"
 	"github.com/rs/zerolog"
 	"go.uber.org/zap"
 )
@@ -66,6 +68,27 @@ func BenchmarkZapJSONProductionLog(b *testing.B) {
 	}
 }
 
+func BenchmarkZapJSONProductionLogSugar(b *testing.B) {
+	tmpfile, err := ioutil.TempFile("", "benchmark")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	cfg := zap.NewProductionConfig()
+	cfg.OutputPaths = []string{tmpfile.Name()}
+	logger, err := cfg.Build()
+
+	sugarLogger := logger.Sugar()
+
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < b.N; i++ {
+		sugarLogger.Infof("Success! statusCode = %s for URL %s", 200, "https://www.google.com")
+	}
+}
+
 func BenchmarkZapJSONDevelopmentLog(b *testing.B) {
 	tmpfile, err := ioutil.TempFile("", "benchmark")
 	if err != nil {
@@ -81,6 +104,27 @@ func BenchmarkZapJSONDevelopmentLog(b *testing.B) {
 	}
 	for i := 0; i < b.N; i++ {
 		logger.Info("sample log message", zap.String("key1", "value1"), zap.String("key2", "value2"))
+	}
+}
+
+func BenchmarkZapJSONDevelopmentLogSugar(b *testing.B) {
+	tmpfile, err := ioutil.TempFile("", "benchmark")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	cfg := zap.NewDevelopmentConfig()
+	cfg.OutputPaths = []string{tmpfile.Name()}
+	logger, err := cfg.Build()
+
+	sugarLogger := logger.Sugar()
+
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < b.N; i++ {
+		sugarLogger.Infof("Success! statusCode = %s for URL %s", 200, "https://www.google.com")
 	}
 }
 
@@ -185,5 +229,57 @@ func BenchmarkZerologRFC3339NanoTime(b *testing.B) {
 			Str("key1", "value1").
 			Str("key2", "value2").
 			Msg("sample log message")
+	}
+}
+
+func BenchmarkIrisGolog(b *testing.B) {
+	tmpfile, err := ioutil.TempFile("", "benchmark")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	golog.SetOutput(tmpfile)
+	golog.SetLevel("debug")
+	// disable time formatting because logrus and std doesn't print the time.
+	// note that the time is being set-ed to time.Now() inside the golog's Log structure, same for logrus,
+	// Therefore we set the time format to empty on golog test in order
+	// to acomblish a fair comparison between golog and logrus.
+	golog.SetTimeFormat("")
+
+	for i := 0; i < b.N; i++ {
+		golog.Infof("[%d] This is an info message", i)
+	}
+}
+
+func jsonOutput(l *golog.Log) bool {
+	enc := json.NewEncoder(l.Logger.Printer)
+	enc.SetIndent("", "    ")
+	err := enc.Encode(l)
+	return err == nil
+}
+
+func BenchmarkIrisGologJSON(b *testing.B) {
+	tmpfile, err := ioutil.TempFile("", "benchmark")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	golog.SetOutput(tmpfile)
+	golog.Handle(jsonOutput)
+
+	golog.SetLevel("debug")
+	// disable time formatting because logrus and std doesn't print the time.
+	// note that the time is being set-ed to time.Now() inside the golog's Log structure, same for logrus,
+	// Therefore we set the time format to empty on golog test in order
+	// to acomblish a fair comparison between golog and logrus.
+	golog.SetTimeFormat("")
+
+	for i := 0; i < b.N; i++ {
+		//golog.Infof("[%d] This is an info message", i)
+		golog.Debugf("This is a %s with data (debug prints the stacktrace too)", "message", golog.Fields{
+			"username": "kataras",
+		})
 	}
 }
